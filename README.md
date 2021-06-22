@@ -1,0 +1,2 @@
+# ColorSegmentation
+k-meansを用いた簡単なカラーセグメンテーションをアプリ（Windows Form Application）に落とし込んだものです．恐らくこれよりもsklearnのKMeansを利用した方がずっと良いです．
