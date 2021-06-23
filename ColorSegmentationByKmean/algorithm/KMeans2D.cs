@@ -29,7 +29,7 @@ namespace ColorSegmentationByKmean.algorithm
 
         public void Fit(double[,] orgX, bool isKMeanPP = true)
         {
-            // 最大値が255という前提で正則化（果たして必要か…？）
+            // 最大値が255という前提で正規化（果たして必要か…？）
             var X = (double[,])orgX.Clone();
             for (int i = 0; i < X.GetLength(0); i++)
             {
@@ -182,7 +182,7 @@ namespace ColorSegmentationByKmean.algorithm
                 Labeling(X);
             }
 
-            // 最大値が255という前提で正則化を解除する
+            // 最大値が255という前提で正規化を解除する
             for (int i = 0; i < cluster_centers.GetLength(0); i++)
             {
                 for (int j = 0; j < cluster_centers.GetLength(1); j++)
