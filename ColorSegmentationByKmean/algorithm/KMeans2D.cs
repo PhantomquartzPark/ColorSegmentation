@@ -198,25 +198,6 @@ namespace ColorSegmentationByKmean.algorithm
         /// <param name="X"></param>
         private void Labeling(double[,] X)
         {
-            // Xとclustersは事前に2乗を計算しておき，高速化を試みる
-            // （効果のほどは体感のみで，詳しい検証は行っていない）
-            double[,] X2 = (double[,])X.Clone();
-            for (int i = 0; i < X2.GetLength(0); i++)
-            {
-                for (int j = 0; j < X2.GetLength(1); j++)
-                {
-                    X2[i, j] *= X2[i, j];
-                }
-            }
-            double[,] cl2 = new double[clusters.Count, X.GetLength(1)];
-            for (int i = 0; i < cl2.GetLength(0); i++)
-            {
-                for (int j = 0; j < cl2.GetLength(1); j++)
-                {
-                    cl2[i, j] = clusters[i][j] * clusters[i][j];
-                }
-            }
-
             // 距離計算とラベル付け
             for (int i = 0; i < X.GetLength(0); i++)
             {
@@ -228,9 +209,8 @@ namespace ColorSegmentationByKmean.algorithm
                     double tmpdist = 0.0;
                     for (int k = 0; k < X.GetLength(1); k++)
                     {
-                        // (x-y)^2 = x^2 + y^2 - 2xy
-                        tmpdist += X2[i, k] + cl2[j, k] - (2 * X[i, k] * clusters[j][k]);
-                        //tmpdist += Math.Pow(X[i, k] - clusters[j][k], 2);
+                        double dif = X[i, k] - clusters[j][k];
+                        tmpdist += dif * dif;
                     }
 
                     // より近いところを候補として残す
