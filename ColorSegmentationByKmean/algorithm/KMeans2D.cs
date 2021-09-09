@@ -29,114 +29,122 @@ namespace ColorSegmentationByKmean.algorithm
 
         public void Fit(double[,] orgX, bool isKMeanPP = true)
         {
-            // 最大値が255という前提で正規化（果たして必要か…？）
-            var X = (double[,])orgX.Clone();
-            for (int i = 0; i < X.GetLength(0); i++)
+            // Preparation
+            double[,] X = (double[,])orgX.Clone();
+            int n_pixels   = X.GetLength(0); // i.e. H*W
+            int n_channels = X.GetLength(1); // RGB = 3
+
+            // Normalize
+            for (int pixel = 0; pixel < n_pixels; pixel++)
             {
-                for (int j = 0; j < X.GetLength(1); j++)
+                for (int channel = 0; channel < n_channels; channel++)
                 {
-                    X[i,j] /= 255;
+                    X[pixel, channel] /= 255;
                 }
             }
 
             // k-means++
             if (isKMeanPP)
             {
-                // 最初のクラスタを定める
-                var first_cluster = new double[X.GetLength(1)];
-                var first_index = random.Next(X.GetLength(0));
-                for (int i = 0; i < X.GetLength(1); i++)
+                // Calculate First Cluster (Random Selection)
+                double[] first_cluster = new double[n_channels];
+                int first_index = random.Next(n_pixels);
+                for (int channel = 0; channel < n_channels; channel++)
                 {
-                    first_cluster[i] = X[first_index, i];
+                    first_cluster[channel] = X[first_index, channel];
                 }
-                clusters.Add(first_cluster);
+                this.clusters.Add(first_cluster);
 
-                // 残りのクラスタを定める
-                if (n_clusters > 1)
+                // Calculate Rest Cluster (Roulette Wheel Selection)
+                if (this.n_clusters > 1)
                 {
-                    var p_cumsum = new double[X.GetLength(0)];
-                    for (int i = 0; i < p_cumsum.Length; i++) { p_cumsum[i] = 0.0; }
-                    var div_cumsum = 0.0;
-                    while ((clusters.Count < n_clusters) && (clusters.Count < X.GetLength(0)))
+                    // Initialize min_distances (Distance between X and NearestCluster)
+                    double[] min_distances = new double[n_pixels];
+                    for (int pixel = 0; pixel < n_pixels; pixel++)
                     {
-                        var next_cluster = new double[X.GetLength(1)];
-                        //var p = new double[X.GetLength(0)];
-                        //double div = 0.0;
-                        for (int i = 0; i < X.GetLength(0); i++)
+                        min_distances[pixel] = 0.0;
+                        for (int channel = 0; channel < n_channels; channel++)
                         {
-                            for (int j = 0; j < X.GetLength(1); j++)
+                            double dist = X[pixel, channel] - first_cluster[channel];
+                            min_distances[pixel] += dist * dist;
+                        }
+                        //min_distances[pixel] = Math.Sqrt(min_distances[pixel]); // probably not so important
+                    }
+
+                    while ((this.clusters.Count < this.n_clusters) && (this.clusters.Count < n_pixels))
+                    {
+                        double sum_distances = 0.0;
+
+                        // Update min_distances
+                        for (int pixel = 0; pixel < n_pixels; pixel++)
+                        {
+                            double distance = 0.0;
+                            for (int channel = 0; channel < n_channels; channel++)
                             {
-                                // 新たに追加されたセントロイドの分を足して保持しておく
-                                double dx2 = Math.Pow(X[i, j] - clusters[clusters.Count - 1][j], 2);
-                                p_cumsum[i] += dx2;
-                                div_cumsum += dx2;
-                                /*
-                                // 元コード
-                                foreach (var c in clusters)
-                                {
-                                    double dx2 = Math.Pow(X[i, j] - c[j], 2);
-                                    p[i] += dx2;
-                                    div += dx2;
-                                }*/
+                                double dist = X[pixel, channel] - this.clusters[this.clusters.Count - 1][channel];
+                                distance += dist * dist;
                             }
+                            //distance = Math.Sqrt(distance); // probably not so important
+                            min_distances[pixel] = Math.Min(min_distances[pixel], distance);
+                            sum_distances += distance;
                         }
-                        // 確率を用いて新たなセントロイドを決める
-                        var p = (double[])p_cumsum.Clone();
-                        double div = div_cumsum;
-                        for (int i = 0; i < X.GetLength(0); i++)
+
+                        // Calculate Probability
+                        double[] probs = (double[])min_distances.Clone(); // probabilities
+                        for (int pixel = 0; pixel < n_pixels; pixel++)
                         {
-                            p[i] /= div;
+                            probs[pixel] /= sum_distances;
                         }
-                        var next_index = Choice(p); // ルーレット選択
-                        for (int i = 0; i < X.GetLength(1); i++)
+
+                        // Select new Cluster
+                        double[] select_cluster = new double[n_channels];
+                        int select_index = this.Select(probs);
+                        for (int channel = 0; channel < n_channels; channel++)
                         {
-                            next_cluster[i] = X[next_index, i];
+                            select_cluster[channel] = X[select_index, channel];
                         }
-                        clusters.Add(next_cluster);
+                        this.clusters.Add(select_cluster);
                     }
                 }
             }
             // k-means
             else
             {
-                // 規定のクラスタ数とデータ数を比較し，少ない方をセントロイドの上限個数とする
-                var maxcluster = Math.Min(n_clusters, X.GetLength(0));
+                // Generate IndexList
+                List<int> randlist = new List<int>(n_pixels);
+                for (int i = 0; i < n_pixels; i++) { randlist.Add(i); }
 
-                // indexと格納値が同じリストを用意し，重複なしの乱数を生成する
-                var randlist = new List<int>(X.GetLength(0));
-                for (int i = 0; i < X.GetLength(0); i++) { randlist.Add(i); }
-                
-                // 上限個数分取り出してセントロイドを決めていく
-                for (int i = 0; i < maxcluster; i++)
+                // Select Clusters
+                int max_clusters = Math.Min(this.n_clusters, n_pixels);
+                for (int i = 0; i < max_clusters; i++)
                 {
-                    var next_cluster = new double[X.GetLength(1)];
-                    var choose_index = random.Next(0, randlist.Count - 1);
-                    var next_index = randlist[choose_index];
-                    randlist.RemoveAt(choose_index);        // 該当箇所は削除する
-                    for (int j = 0; j < X.GetLength(1); j++)
+                    int randlist_index = random.Next(0, randlist.Count - 1);
+
+                    double[] select_cluster = new double[n_channels];
+                    int select_index = randlist[randlist_index];
+                    for (int channel = 0; channel < n_channels; channel++)
                     {
-                        next_cluster[j] = X[next_index, j];
+                        select_cluster[channel] = X[select_index, channel];
                     }
-                    clusters.Add(next_cluster);
+                    this.clusters.Add(select_cluster);
+                    randlist.RemoveAt(randlist_index);
                 }
             }
-            
 
-            // ラベルの初期化，ラベル付け
-            this.labels = new int[X.GetLength(0)];
+            // Labeling
+            this.labels = new int[n_pixels];
             Labeling(X);
 
-            // その他必要物の準備（前のラベルの状態，セントロイドの初期化）
-            var prev_labels = new int[X.GetLength(0)];
+            int[] prev_labels = new int[n_pixels];
             for (int i = 0; i < prev_labels.Length; i++) { prev_labels[i] = 0; }
             this.cluster_centers = new double[this.n_clusters, X.GetLength(1)];
 
-            // 訓練箇所
+            // Training
             for (int count = 0; count < maxiter; count++)
             {
-                // ラベルを確認し，前の状態から変化が無ければ強制終了
+                // Check labels
                 bool isSameLabels = true;
-                for (int i = 0; i < X.GetLength(0); i++)
+                for (int i = 0; i < n_pixels; i++)
                 {
                     if (this.labels[i] != prev_labels[i])
                     {
@@ -146,48 +154,48 @@ namespace ColorSegmentationByKmean.algorithm
                 }
                 if (isSameLabels) { break; }
 
-                // XXとn_membersを初期化（クラスタごとの総和と，
-                // そこから平均（クラスタ重心）を算出するために用いるメンバ数）
-                var XX = new double[n_clusters, X.GetLength(1)];
-                for (int i = 0; i < XX.GetLength(0); i++) {
-                    for (int j = 0; j < XX.GetLength(1); j++)
+                // Initialize sum_X (summation of color value) and n_members
+                double[,] sum_X = new double[this.n_clusters, n_channels];
+                for (int i = 0; i < this.n_clusters; i++) {
+                    for (int channel = 0; channel < n_channels; channel++)
                     {
-                        XX[i, j] = 0;
+                        sum_X[i, channel] = 0;
                     }
                 }
-                var n_members = new int[n_clusters];
+                int[] n_members = new int[n_clusters];
                 for (int i = 0; i < n_members.Length; i++) { n_members[i] = 0; }
                 
-                // ラベルを見ながらXXとn_membersを更新
-                for (int i = 0; i < X.GetLength(0); i++)
+                // Calculate sum_X and n_members
+                for (int pixel = 0; pixel < n_pixels; pixel++)
                 {
-                    for (int j = 0; j < X.GetLength(1); j++)
+                    for (int channel = 0; channel < n_channels; channel++)
                     {
-                        XX[this.labels[i], j] += X[i, j];
+                        sum_X[this.labels[pixel], channel] += X[pixel, channel];
                     }
-                    n_members[this.labels[i]]++;
+                    n_members[this.labels[pixel]]++;
                 }
-                // 平均を算出してセントロイド（クラスタ重心）を更新
+
+                // Calculate MeanValue (Update Centroid)
                 for (int i = 0; i < n_clusters; i++)
                 {
-                    for (int j = 0; j < X.GetLength(1); j++)
+                    for (int j = 0; j < n_channels; j++)
                     {
-                        this.cluster_centers[i, j] = XX[i, j] / n_members[i];
+                        this.cluster_centers[i, j] = sum_X[i, j] / n_members[i];
                     }
                 }
-                // 現ラベルを過去のもの（pre_labels）とする
+
+                // Update labels
                 prev_labels = this.labels;
-                this.labels = new int[X.GetLength(0)]; // 再初期化
-                //Array.Copy(this.labels, 0, prev_labels, 0, this.labels.Length);
+                this.labels = new int[n_pixels]; // reinitialize
                 Labeling(X);
             }
 
-            // 最大値が255という前提で正規化を解除する
-            for (int i = 0; i < cluster_centers.GetLength(0); i++)
+            // Inverse Normalize (Condition: this.cluster_centers[i, j] range from 0. to 1.)
+            for (int i = 0; i < this.cluster_centers.GetLength(0); i++)
             {
-                for (int j = 0; j < cluster_centers.GetLength(1); j++)
+                for (int channel = 0; channel < this.cluster_centers.GetLength(1); channel++)
                 {
-                    cluster_centers[i, j] *= 255;
+                    this.cluster_centers[i, channel] *= 255;
                 }
             }
         }
@@ -198,29 +206,30 @@ namespace ColorSegmentationByKmean.algorithm
         /// <param name="X"></param>
         private void Labeling(double[,] X)
         {
-            // 距離計算とラベル付け
+            // Calculate Distance and Labeling
             for (int i = 0; i < X.GetLength(0); i++)
             {
-                double nearest_dist = double.MaxValue;
+                double nearest_distance = double.MaxValue;
                 int nearest_index = 0;
-                for (int j = 0; j < clusters.Count; j++)
+                for (int j = 0; j < this.clusters.Count; j++)
                 {
-                    // 距離計算
-                    double tmpdist = 0.0;
+                    // Calculate Distance
+                    double distance = 0.0;
                     for (int k = 0; k < X.GetLength(1); k++)
                     {
-                        double dif = X[i, k] - clusters[j][k];
-                        tmpdist += dif * dif;
+                        double dist = X[i, k] - clusters[j][k];
+                        distance += dist * dist;
                     }
 
-                    // より近いところを候補として残す
-                    if (tmpdist < nearest_dist)
+                    // Record NearestDistance
+                    if (distance < nearest_distance)
                     {
-                        nearest_dist = tmpdist;
+                        nearest_distance = distance;
                         nearest_index = j;
                     }
                 }
-                // 最後まで残った候補を基にラベル付けする
+
+                // Labeling
                 this.labels[i] = nearest_index;
             }
         }
@@ -228,28 +237,25 @@ namespace ColorSegmentationByKmean.algorithm
         /// <summary>
         /// 確率に基づいたindex取得のためのメソッド
         /// </summary>
-        /// <param name="p"></param>
+        /// <param name="probs">probabilities</param>
         /// <returns></returns>
-        private int Choice(double[] p)
+        private int Select(double[] probs)
         {
-            double sum = 0.0;
-            foreach (var pp in p)
+            double sum_probs = 0.0; // maybe close to 1. (include error)
+            foreach (var prob in probs)
             {
-                sum += pp;
+                sum_probs += prob;
             }
 
-            // ルーレット方式でindexを決める
-            // （以下のようにrouletteの値にsumをかけても，
-            // pのクローンを作って各要素をsumで割る2通りがあるはず
-            // （後者の方が乱数間の隙間ができにくい…？））
-            double roulette = this.random.NextDouble() * sum;
+            // Roulette Wheel Selection
+            double roulette = this.random.NextDouble() * sum_probs;
             int index = 0;
-            for (int i = 0; i < p.Length; i++)
+            for (int i = 0; i < probs.Length; i++)
             {
                 index = i;
-                // rouletteを引いて0未満（又は以下）になったら
-                // そこが対象だったということ
-                roulette -= p[i];
+
+                // found index if (roulette < 0) (or (roulette <= 0))
+                roulette -= probs[i];
                 if (roulette < 0) { break; }
             }
 
